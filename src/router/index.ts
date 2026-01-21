@@ -9,6 +9,11 @@ const router = createRouter({
       name: 'home',
       component: HomeView,
     },
+    {
+      path: '/drone-playback',
+      name: 'drone-playback',
+      component: () => import('../views/DronePlaybackView.vue'),
+    },
     // {
     //   path: '/about',
     //   name: 'about',
