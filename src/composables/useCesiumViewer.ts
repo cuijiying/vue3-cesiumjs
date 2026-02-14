@@ -18,7 +18,7 @@ export function useCesiumViewer(containerId: string) {
         timeline: false, // 不显示时间轴
         baseLayerPicker: false, // 不显示图层选择器
         geocoder: false, // 不显示地理编码器
-        homeButton: true, // 显示主页按钮
+        homeButton: false , // 显示主页按钮
         sceneModePicker: false, // 不显示场景模式选择器
         navigationHelpButton: false, // 不显示帮助按钮
         fullscreenButton: false, // 不显示全屏按钮

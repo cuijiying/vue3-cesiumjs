@@ -92,12 +92,18 @@
     <div class="control-section">
       <label>视角控制：</label>
       <div class="button-group">
-        <button @click="onFollow" class="btn-info">
-          🎯 跟随无人机
+        <button 
+          @click="onToggleFollow" 
+          :class="['btn-info', { active: isFollowing }]"
+        >
+          {{ isFollowing ? '🔴 取消跟随' : '🎯 跟随无人机' }}
         </button>
         <button @click="onFlyTo" class="btn-info">
           ✈️ 飞到无人机
         </button>
+      </div>
+      <div v-if="isFollowing" class="follow-hint">
+        相机正在实时跟随无人机
       </div>
     </div>
 
@@ -147,6 +153,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  isFollowing: {
+    type: Boolean,
+    default: false,
+  },
   progress: {
     type: Number,
     default: 0,
@@ -182,6 +192,7 @@ const emit = defineEmits([
   'seek',
   'speedChange',
   'follow',
+  'unfollow',
   'flyTo',
   'trajectoryChange',
   'close',
@@ -203,7 +214,13 @@ const onStop = () => emit('stop')
 const onReset = () => emit('reset')
 const onSeek = () => emit('seek', progressValue.value)
 const onSpeedChange = (speed: number) => emit('speedChange', speed)
-const onFollow = () => emit('follow')
+const onToggleFollow = () => {
+  if (props.isFollowing) {
+    emit('unfollow')
+  } else {
+    emit('follow')
+  }
+}
 const onFlyTo = () => emit('flyTo')
 const onTrajectoryChange = () => emit('trajectoryChange', selectedTrajectory.value)
 
@@ -432,6 +449,42 @@ button:disabled {
   background: #4CAF50;
   color: white;
   border-color: #45a049;
+}
+
+.btn-info.active {
+  background: #f44336;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(244, 67, 54, 0);
+  }
+}
+
+.follow-hint {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: linear-gradient(135deg, #4CAF50, #45a049);
+  color: white;
+  border-radius: 4px;
+  font-size: 12px;
+  text-align: center;
+  animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .status-section {

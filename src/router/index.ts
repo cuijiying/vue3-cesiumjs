@@ -13,15 +13,22 @@ const router = createRouter({
       path: '/drone-playback',
       name: 'drone-playback',
       component: () => import('../views/DronePlaybackView.vue'),
+      meta: {
+        title: '无人机轨迹回放',
+        description: '查看无人机飞行轨迹的实时回放，支持多种飞行模式',
+        icon: '🚁',
+      },
     },
-    // {
-    //   path: '/about',
-    //   name: 'about',
-    //   // route level code-splitting
-    //   // this generates a separate chunk (About.[hash].js) for this route
-    //   // which is lazy-loaded when the route is visited.
-    //   component: () => import('../views/AboutView.vue'),
-    // },
+    {
+      path: '/tianditu-imagery',
+      name: 'tianditu-imagery',
+      component: () => import('../views/TiandituImageryView.vue'),
+      meta: {
+        title: '天地图影像',
+        description: '加载天地图卫星影像、矢量地图和地形晕渲图层，支持注记显示切换',
+        icon: '🗺️',
+      },
+    },
   ],
 })
 

@@ -19,6 +19,7 @@ export function useDronePlayback(options: DronePlaybackOptions) {
   const isPaused = ref(false)
   const currentIndex = ref(0)
   const speedMultiplier = ref(options.speedMultiplier || 1)
+  const isFollowing = ref(false) // 相机是否跟随无人机
   
   // 计算属性
   const currentPosition = computed(() => trajectory[currentIndex.value])
@@ -102,16 +103,21 @@ export function useDronePlayback(options: DronePlaybackOptions) {
   }
   
   /**
-   * 创建轨迹路径
+   * 创建轨迹路径（动态绘制，根据当前位置实时更新）
    */
   const createPathEntity = () => {
-    const positions = trajectory.map(pos =>
-      Cesium.Cartesian3.fromDegrees(pos.longitude, pos.latitude, pos.altitude)
-    )
+    // 使用 CallbackProperty 动态返回已飞过的轨迹点
+    const dynamicPositions = new Cesium.CallbackProperty(() => {
+      // 只返回从起点到当前位置的轨迹点
+      const positions = trajectory.slice(0, currentIndex.value + 1).map(pos =>
+        Cesium.Cartesian3.fromDegrees(pos.longitude, pos.latitude, pos.altitude)
+      )
+      return positions
+    }, false)
     
     pathEntity = viewer.entities.add({
       polyline: {
-        positions: positions,
+        positions: dynamicPositions,
         width: 3,
         material: new Cesium.PolylineGlowMaterialProperty({
           glowPower: 0.2,
@@ -142,6 +148,56 @@ export function useDronePlayback(options: DronePlaybackOptions) {
         `无人机\n高度: ${currentPosition.value.altitude.toFixed(0)}m\n速度: ${currentPosition.value.speed.toFixed(1)}m/s`
       )
     }
+    
+    // 相机跟随无人机
+    if (isFollowing.value) {
+      updateCameraFollow()
+    }
+  }
+  
+  /**
+   * 更新相机跟随位置
+   */
+  const updateCameraFollow = () => {
+    if (!currentPosition.value) return
+    
+    const pos = currentPosition.value
+    const heading = Cesium.Math.toRadians(pos.heading)
+    
+    // 计算相机位置：在无人机后方上方
+    const cameraDistance = 200 // 相机与无人机的距离
+    const cameraHeight = 100 // 相机高于无人机的高度
+    
+    // 计算相机在无人机后方的偏移
+    const offsetX = -Math.sin(heading) * cameraDistance
+    const offsetY = -Math.cos(heading) * cameraDistance
+    
+    // 将经纬度偏移转换（近似计算）
+    const metersPerDegreeLat = 111320
+    const metersPerDegreeLon = metersPerDegreeLat * Math.cos(Cesium.Math.toRadians(pos.latitude))
+    
+    const cameraLongitude = pos.longitude + offsetX / metersPerDegreeLon
+    const cameraLatitude = pos.latitude + offsetY / metersPerDegreeLat
+    const cameraAltitude = pos.altitude + cameraHeight
+    
+    // 计算相机朝向无人机的方向
+    const cameraPosition = Cesium.Cartesian3.fromDegrees(cameraLongitude, cameraLatitude, cameraAltitude)
+    const dronePosition = Cesium.Cartesian3.fromDegrees(pos.longitude, pos.latitude, pos.altitude)
+    
+    // 计算从相机到无人机的方向
+    const direction = Cesium.Cartesian3.subtract(dronePosition, cameraPosition, new Cesium.Cartesian3())
+    Cesium.Cartesian3.normalize(direction, direction)
+    
+    // 计算 up 向量
+    const up = Cesium.Cartesian3.normalize(cameraPosition, new Cesium.Cartesian3())
+    
+    viewer.camera.setView({
+      destination: cameraPosition,
+      orientation: {
+        direction: direction,
+        up: up,
+      },
+    })
   }
   
   /**
@@ -267,19 +323,21 @@ export function useDronePlayback(options: DronePlaybackOptions) {
   }
   
   /**
-   * 跟随无人机视角
+   * 开启相机跟随无人机
    */
   const followDrone = () => {
     if (!droneEntity || !currentPosition.value) return
     
-    viewer.trackedEntity = droneEntity
+    isFollowing.value = true
+    // 立即更新相机位置
+    updateCameraFollow()
   }
   
   /**
    * 取消跟随
    */
   const unfollowDrone = () => {
-    viewer.trackedEntity = undefined
+    isFollowing.value = false
   }
   
   /**
@@ -337,6 +395,7 @@ export function useDronePlayback(options: DronePlaybackOptions) {
     totalDuration,
     currentTime,
     speedMultiplier,
+    isFollowing,
     
     // 方法
     play,

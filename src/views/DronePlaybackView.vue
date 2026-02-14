@@ -6,6 +6,7 @@
       v-if="playbackReady && playbackState"
       :isPlaying="playbackState.isPlaying"
       :isPaused="playbackState.isPaused"
+      :isFollowing="playbackState.isFollowing"
       :progress="playbackState.progress"
       :currentTime="playbackState.currentTime"
       :totalDuration="playbackState.totalDuration"
@@ -19,6 +20,7 @@
       @seek="handleSeek"
       @speedChange="handleSpeedChange"
       @follow="handleFollow"
+      @unfollow="handleUnfollow"
       @flyTo="handleFlyTo"
       @trajectoryChange="changeTrajectory"
     />
@@ -49,6 +51,7 @@ const playbackState = computed(() => {
   return {
     isPlaying: p.isPlaying,
     isPaused: p.isPaused,
+    isFollowing: p.isFollowing,
     progress: p.progress,
     currentTime: p.currentTime,
     totalDuration: p.totalDuration,
@@ -66,6 +69,7 @@ const handleReset = () => playback.value?.reset()
 const handleSeek = (progress: number) => playback.value?.seekToProgress(progress)
 const handleSpeedChange = (speed: number) => playback.value?.setSpeed(speed)
 const handleFollow = () => playback.value?.followDrone()
+const handleUnfollow = () => playback.value?.unfollowDrone()
 const handleFlyTo = () => playback.value?.flyToDrone()
 
 // 初始化轨迹回放
@@ -114,8 +118,8 @@ onUnmounted(() => {
 
 <style scoped>
 .drone-playback-view {
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   position: relative;
   overflow: hidden;
 }
