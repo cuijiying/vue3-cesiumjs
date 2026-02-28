@@ -161,7 +161,7 @@ onMounted(() => {
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
 
   .sidebar-header {
-    padding: 30px 20px;
+    padding: 10px 20px;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
 
@@ -232,7 +232,7 @@ onMounted(() => {
     .demo-header {
       background: white;
       border-radius: 12px;
-      padding: 20px;
+      padding: 10px;
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
       display: flex;
       align-items: center;

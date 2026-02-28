@@ -243,7 +243,7 @@ const formatTime = (seconds: number): string => {
   padding: 20px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   z-index: 1000;
-  max-height: 90vh;
+  max-height: 92%;
   overflow-y: auto;
 }
 
