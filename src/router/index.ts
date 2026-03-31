@@ -29,6 +29,16 @@ const router = createRouter({
         icon: '🗺️',
       },
     },
+    {
+      path: '/drone-patrol',
+      name: 'drone-patrol',
+      component: () => import('../views/DronePatrolView.vue'),
+      meta: {
+        title: '无人机巡查',
+        description: '无人机按预设航线自动巡查，支持工业园区、河道、光伏电站等场景',
+        icon: '🛸',
+      },
+    },
   ],
 })
 
