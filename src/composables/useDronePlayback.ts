@@ -1,4 +1,4 @@
-import { ref, computed, watch, type Ref } from 'vue'
+import { ref, computed } from 'vue'
 import * as Cesium from 'cesium'
 import type { DronePosition } from '@/data/droneTrajectory'
 
@@ -21,9 +21,21 @@ export function useDronePlayback(options: DronePlaybackOptions) {
   const speedMultiplier = ref(options.speedMultiplier || 1)
   const isFollowing = ref(false) // 相机是否跟随无人机
   
+  // 浮点索引，用于平滑动画（支持任意速度倍率）
+  let fractionalIndex = 0
+  
+  // 当前插值位置（可变对象，避免每帧创建新对象）
+  const interpolatedPos = {
+    longitude: 0, latitude: 0, altitude: 0,
+    heading: 0, pitch: 0, roll: 0, speed: 0
+  }
+  
   // 计算属性
   const currentPosition = computed(() => trajectory[currentIndex.value])
-  const progress = computed(() => (currentIndex.value / (trajectory.length - 1)) * 100)
+  const progress = computed(() => {
+    if (trajectory.length <= 1) return 0
+    return (currentIndex.value / (trajectory.length - 1)) * 100
+  })
   const totalDuration = computed(() => {
     if (trajectory.length < 2) return 0
     const lastPos = trajectory[trajectory.length - 1]
@@ -44,38 +56,81 @@ export function useDronePlayback(options: DronePlaybackOptions) {
   let animationFrameId: number | null = null
   let lastUpdateTime: number | null = null
   
+  // 路径位置缓存（避免每帧重建数组）
+  let cachedPathPositions: Cesium.Cartesian3[] = []
+  let cachedPathIndex = -1
+  
   /**
-   * 创建无人机实体
+   * 插值角度（正确处理 0/360 度边界）
+   */
+  const lerpAngle = (a: number, b: number, t: number): number => {
+    let diff = b - a
+    while (diff > 180) diff -= 360
+    while (diff < -180) diff += 360
+    return a + diff * t
+  }
+  
+  /**
+   * 根据浮点索引更新插值位置
+   */
+  const updateInterpolatedPosition = () => {
+    const idx = Math.floor(fractionalIndex)
+    const frac = fractionalIndex - idx
+    const pos1 = trajectory[idx]
+    const pos2 = trajectory[Math.min(idx + 1, trajectory.length - 1)]
+    
+    if (!pos1) return
+    
+    if (!pos2 || idx >= trajectory.length - 1) {
+      interpolatedPos.longitude = pos1.longitude
+      interpolatedPos.latitude = pos1.latitude
+      interpolatedPos.altitude = pos1.altitude
+      interpolatedPos.heading = pos1.heading
+      interpolatedPos.pitch = pos1.pitch
+      interpolatedPos.roll = pos1.roll
+      interpolatedPos.speed = pos1.speed
+      return
+    }
+    
+    interpolatedPos.longitude = pos1.longitude + (pos2.longitude - pos1.longitude) * frac
+    interpolatedPos.latitude = pos1.latitude + (pos2.latitude - pos1.latitude) * frac
+    interpolatedPos.altitude = pos1.altitude + (pos2.altitude - pos1.altitude) * frac
+    interpolatedPos.heading = lerpAngle(pos1.heading, pos2.heading, frac)
+    interpolatedPos.pitch = pos1.pitch + (pos2.pitch - pos1.pitch) * frac
+    interpolatedPos.roll = pos1.roll + (pos2.roll - pos1.roll) * frac
+    interpolatedPos.speed = pos1.speed + (pos2.speed - pos1.speed) * frac
+  }
+  
+  /**
+   * 创建无人机实体（使用 CallbackProperty 避免每帧创建新 Property 对象）
    */
   const createDroneEntity = () => {
     if (!currentPosition.value) return
     
-    const position = Cesium.Cartesian3.fromDegrees(
-      currentPosition.value.longitude,
-      currentPosition.value.latitude,
-      currentPosition.value.altitude
-    )
+    // 初始化插值位置
+    Object.assign(interpolatedPos, currentPosition.value)
     
-    // 创建无人机模型（使用正方体代替）
     droneEntity = viewer.entities.add({
-      position: position,
-      orientation: new Cesium.CallbackProperty((time, result) => {
-        if (!currentPosition.value) return result
-        
-        const heading = Cesium.Math.toRadians(currentPosition.value.heading)
-        const pitch = Cesium.Math.toRadians(currentPosition.value.pitch)
-        const roll = Cesium.Math.toRadians(currentPosition.value.roll)
+      // 使用 CallbackProperty 实时读取插值位置，无需每帧创建新 ConstantPositionProperty
+      position: new Cesium.CallbackProperty(() => {
+        return Cesium.Cartesian3.fromDegrees(
+          interpolatedPos.longitude,
+          interpolatedPos.latitude,
+          interpolatedPos.altitude
+        )
+      }, false) as unknown as Cesium.PositionProperty,
+      orientation: new Cesium.CallbackProperty(() => {
+        const heading = Cesium.Math.toRadians(interpolatedPos.heading)
+        const pitch = Cesium.Math.toRadians(interpolatedPos.pitch)
+        const roll = Cesium.Math.toRadians(interpolatedPos.roll)
         
         return Cesium.Transforms.headingPitchRollQuaternion(
           Cesium.Cartesian3.fromDegrees(
-            currentPosition.value.longitude,
-            currentPosition.value.latitude,
-            currentPosition.value.altitude
+            interpolatedPos.longitude,
+            interpolatedPos.latitude,
+            interpolatedPos.altitude
           ),
-          new Cesium.HeadingPitchRoll(heading, pitch, roll),
-          Cesium.Ellipsoid.WGS84,
-          undefined,
-          result
+          new Cesium.HeadingPitchRoll(heading, pitch, roll)
         )
       }, false),
       // 使用正方体表示无人机
@@ -86,9 +141,11 @@ export function useDronePlayback(options: DronePlaybackOptions) {
         outlineColor: Cesium.Color.WHITE,
         outlineWidth: 2,
       },
-      // 添加标签
+      // 标签也使用 CallbackProperty 避免每帧创建 ConstantProperty
       label: {
-        text: '无人机',
+        text: new Cesium.CallbackProperty(() => {
+          return `无人机\n高度: ${interpolatedPos.altitude.toFixed(0)}m\n速度: ${interpolatedPos.speed.toFixed(1)}m/s`
+        }, false) as unknown as Cesium.Property,
         font: '14px sans-serif',
         fillColor: Cesium.Color.WHITE,
         outlineColor: Cesium.Color.BLACK,
@@ -103,21 +160,34 @@ export function useDronePlayback(options: DronePlaybackOptions) {
   }
   
   /**
-   * 创建轨迹路径（动态绘制，根据当前位置实时更新）
+   * 创建轨迹路径（优化：增量缓存已飞过的位置，避免每帧重建整个数组）
    */
   const createPathEntity = () => {
-    // 使用 CallbackProperty 动态返回已飞过的轨迹点
-    const dynamicPositions = new Cesium.CallbackProperty(() => {
-      // 只返回从起点到当前位置的轨迹点
-      const positions = trajectory.slice(0, currentIndex.value + 1).map(pos =>
-        Cesium.Cartesian3.fromDegrees(pos.longitude, pos.latitude, pos.altitude)
-      )
-      return positions
-    }, false)
-    
     pathEntity = viewer.entities.add({
       polyline: {
-        positions: dynamicPositions,
+        positions: new Cesium.CallbackProperty(() => {
+          const idx = currentIndex.value
+          if (idx === cachedPathIndex) return cachedPathPositions
+          
+          if (idx > cachedPathIndex && cachedPathIndex >= 0) {
+            // 增量追加新点（正向播放的常见路径）
+            for (let i = cachedPathIndex + 1; i <= idx; i++) {
+              const pos = trajectory[i]
+              if (pos) {
+                cachedPathPositions.push(
+                  Cesium.Cartesian3.fromDegrees(pos.longitude, pos.latitude, pos.altitude)
+                )
+              }
+            }
+          } else {
+            // 全量重建（回退 seek 或首次）
+            cachedPathPositions = trajectory.slice(0, idx + 1).map(pos =>
+              Cesium.Cartesian3.fromDegrees(pos.longitude, pos.latitude, pos.altitude)
+            )
+          }
+          cachedPathIndex = idx
+          return cachedPathPositions
+        }, false),
         width: 3,
         material: new Cesium.PolylineGlowMaterialProperty({
           glowPower: 0.2,
@@ -129,50 +199,19 @@ export function useDronePlayback(options: DronePlaybackOptions) {
   }
   
   /**
-   * 更新无人机位置
-   */
-  const updateDronePosition = () => {
-    if (!droneEntity || !currentPosition.value) return
-    
-    const position = Cesium.Cartesian3.fromDegrees(
-      currentPosition.value.longitude,
-      currentPosition.value.latitude,
-      currentPosition.value.altitude
-    )
-    
-    droneEntity.position = new Cesium.ConstantPositionProperty(position)
-    
-    // 更新标签信息
-    if (droneEntity.label) {
-      droneEntity.label.text = new Cesium.ConstantProperty(
-        `无人机\n高度: ${currentPosition.value.altitude.toFixed(0)}m\n速度: ${currentPosition.value.speed.toFixed(1)}m/s`
-      )
-    }
-    
-    // 相机跟随无人机
-    if (isFollowing.value) {
-      updateCameraFollow()
-    }
-  }
-  
-  /**
    * 更新相机跟随位置
    */
   const updateCameraFollow = () => {
-    if (!currentPosition.value) return
-    
-    const pos = currentPosition.value
+    const pos = interpolatedPos
     const heading = Cesium.Math.toRadians(pos.heading)
     
     // 计算相机位置：在无人机后方上方
-    const cameraDistance = 200 // 相机与无人机的距离
-    const cameraHeight = 100 // 相机高于无人机的高度
+    const cameraDistance = 200
+    const cameraHeight = 100
     
-    // 计算相机在无人机后方的偏移
     const offsetX = -Math.sin(heading) * cameraDistance
     const offsetY = -Math.cos(heading) * cameraDistance
     
-    // 将经纬度偏移转换（近似计算）
     const metersPerDegreeLat = 111320
     const metersPerDegreeLon = metersPerDegreeLat * Math.cos(Cesium.Math.toRadians(pos.latitude))
     
@@ -180,15 +219,12 @@ export function useDronePlayback(options: DronePlaybackOptions) {
     const cameraLatitude = pos.latitude + offsetY / metersPerDegreeLat
     const cameraAltitude = pos.altitude + cameraHeight
     
-    // 计算相机朝向无人机的方向
     const cameraPosition = Cesium.Cartesian3.fromDegrees(cameraLongitude, cameraLatitude, cameraAltitude)
     const dronePosition = Cesium.Cartesian3.fromDegrees(pos.longitude, pos.latitude, pos.altitude)
     
-    // 计算从相机到无人机的方向
     const direction = Cesium.Cartesian3.subtract(dronePosition, cameraPosition, new Cesium.Cartesian3())
     Cesium.Cartesian3.normalize(direction, direction)
     
-    // 计算 up 向量
     const up = Cesium.Cartesian3.normalize(cameraPosition, new Cesium.Cartesian3())
     
     viewer.camera.setView({
@@ -201,7 +237,7 @@ export function useDronePlayback(options: DronePlaybackOptions) {
   }
   
   /**
-   * 动画循环
+   * 动画循环（使用浮点索引实现平滑插值动画）
    */
   const animate = () => {
     if (!isPlaying.value || isPaused.value) return
@@ -212,25 +248,29 @@ export function useDronePlayback(options: DronePlaybackOptions) {
       lastUpdateTime = now
     }
     
-    const deltaTime = (now - lastUpdateTime) / 1000 // 转换为秒
+    const deltaTime = (now - lastUpdateTime) / 1000
     lastUpdateTime = now
     
-    // 根据速度倍数计算应该前进的索引数
-    // 每秒前进的索引数 = 速度倍数 * 基础速度（每秒10个点）
+    // 浮点累积进度：支持任意速度倍率（包括 0.5x 慢速）
     const indexStep = deltaTime * speedMultiplier.value * 10
+    fractionalIndex += indexStep
     
-    let nextIndex = currentIndex.value + Math.max(1, Math.floor(indexStep))
-    
-    if (nextIndex >= trajectory.length - 1) {
+    if (fractionalIndex >= trajectory.length - 1) {
       // 到达终点
+      fractionalIndex = trajectory.length - 1
       currentIndex.value = trajectory.length - 1
-      updateDronePosition()
+      updateInterpolatedPosition()
+      if (isFollowing.value) updateCameraFollow()
       stop()
       return
     }
     
-    currentIndex.value = nextIndex
-    updateDronePosition()
+    currentIndex.value = Math.floor(fractionalIndex)
+    updateInterpolatedPosition()
+    
+    if (isFollowing.value) {
+      updateCameraFollow()
+    }
     
     animationFrameId = requestAnimationFrame(animate)
   }
@@ -295,24 +335,34 @@ export function useDronePlayback(options: DronePlaybackOptions) {
   const reset = () => {
     stop()
     currentIndex.value = 0
-    updateDronePosition()
+    fractionalIndex = 0
+    cachedPathIndex = -1
+    cachedPathPositions = []
+    updateInterpolatedPosition()
   }
   
   /**
    * 跳转到指定进度（0-100）
    */
-  const seekToProgress = (progress: number) => {
-    const targetIndex = Math.floor((progress / 100) * (trajectory.length - 1))
-    currentIndex.value = Math.max(0, Math.min(targetIndex, trajectory.length - 1))
-    updateDronePosition()
+  const seekToProgress = (progressValue: number) => {
+    const targetIndex = (progressValue / 100) * (trajectory.length - 1)
+    fractionalIndex = Math.max(0, Math.min(targetIndex, trajectory.length - 1))
+    currentIndex.value = Math.floor(fractionalIndex)
+    // 重置路径缓存以正确处理回退
+    cachedPathIndex = -1
+    cachedPathPositions = []
+    updateInterpolatedPosition()
   }
   
   /**
    * 跳转到指定索引
    */
   const seekToIndex = (index: number) => {
-    currentIndex.value = Math.max(0, Math.min(index, trajectory.length - 1))
-    updateDronePosition()
+    fractionalIndex = Math.max(0, Math.min(index, trajectory.length - 1))
+    currentIndex.value = Math.floor(fractionalIndex)
+    cachedPathIndex = -1
+    cachedPathPositions = []
+    updateInterpolatedPosition()
   }
   
   /**
@@ -326,10 +376,9 @@ export function useDronePlayback(options: DronePlaybackOptions) {
    * 开启相机跟随无人机
    */
   const followDrone = () => {
-    if (!droneEntity || !currentPosition.value) return
+    if (!droneEntity) return
     
     isFollowing.value = true
-    // 立即更新相机位置
     updateCameraFollow()
   }
   
@@ -344,13 +393,11 @@ export function useDronePlayback(options: DronePlaybackOptions) {
    * 飞到无人机位置
    */
   const flyToDrone = () => {
-    if (!currentPosition.value) return
-    
     viewer.camera.flyTo({
       destination: Cesium.Cartesian3.fromDegrees(
-        currentPosition.value.longitude,
-        currentPosition.value.latitude,
-        currentPosition.value.altitude + 500
+        interpolatedPos.longitude,
+        interpolatedPos.latitude,
+        interpolatedPos.altitude + 500
       ),
       orientation: {
         heading: Cesium.Math.toRadians(0),
@@ -376,6 +423,9 @@ export function useDronePlayback(options: DronePlaybackOptions) {
       viewer.entities.remove(pathEntity)
       pathEntity = null
     }
+    
+    cachedPathPositions = []
+    cachedPathIndex = -1
   }
   
   /**
