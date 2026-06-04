@@ -10,8 +10,8 @@ export function useCesiumViewer(containerId: string) {
 
   const initViewer = () => {
     try {
-      // 设置 Cesium Token（如果需要）
-      // Cesium.Ion.defaultAccessToken = 'your_token_here'
+      // 从环境变量读取 Cesium Ion 访问令牌
+      Cesium.Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_ION_TOKEN
 
       viewer.value = new Cesium.Viewer(containerId, {
         animation: false, // 不显示动画控件
