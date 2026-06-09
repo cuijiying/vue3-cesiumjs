@@ -10,6 +10,16 @@ const router = createRouter({
       component: HomeView,
     },
     {
+      path: '/tileset-ground',
+      name: 'tileset-ground',
+      component: () => import('../views/TilesetGroundView.vue'),
+      meta: {
+        title: '3D Tiles 贴地加载',
+        description: '加载 3D Tiles 图层并自动飞行定位到图层范围，基于地形采样进行贴地校正',
+        icon: '🏙️',
+      },
+    },
+    {
       path: '/drone-playback',
       name: 'drone-playback',
       component: () => import('../views/DronePlaybackView.vue'),
