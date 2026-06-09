@@ -1,7 +1,27 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, defineAsyncComponent, shallowRef, watch, markRaw } from 'vue'
 import { useRouter } from 'vue-router'
+import { format, fromNow, parse, formatDuration, add } from 'time-formatter-ts'
 
+// Format a date
+format(new Date(), 'YYYY-MM-DD HH:mm:ss')
+// → '2026-02-27 14:30:05'
+
+// Relative time
+fromNow(Date.now() - 5 * 60 * 1000)
+// → '5 minutes ago'
+
+// Parse a date string
+parse('Feb 27, 2026 3:30 PM')
+// → Date object
+
+// Format a duration
+formatDuration({ hours: 2, minutes: 30 })
+// → '2 hours 30 minutes'
+
+// Calendar ops
+add(new Date(), 7, 'days')
+// → Date 7 days from now
 const router = useRouter()
 
 // 定义demo路由的元数据类型
@@ -95,6 +115,14 @@ onMounted(() => {
     selectedIndex.value = 0
   }
 })
+
+// 测试time-formatter-ts相关功能
+console.log(format(new Date(), 'YYYY-MM-DD HH:mm:ss'))
+console.log(fromNow(Date.now() - 5 * 60 * 1000))
+console.log(parse('Feb 27, 2026 3:30 PM'))
+console.log(formatDuration({ hours: 2, minutes: 30 }))
+console.log(add(new Date(), 7, 'days'))
+
 </script>
 
 <template>
