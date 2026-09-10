@@ -38,7 +38,16 @@ jobs:
       - name: Build
         run: pnpm run build-only
         env:
+          # Absolute base keeps Vue Router history mode correct on project Pages
           VITE_BASE: /vue3-cesiumjs/
+
+      # vite-plugin-cesium copies into dist${base}/cesium; Pages already serves under /vue3-cesiumjs/
+      - name: Fix Cesium asset path for GitHub Pages
+        run: |
+          if [ -d dist/vue3-cesiumjs/cesium ]; then
+            mv dist/vue3-cesiumjs/cesium dist/cesium
+            rm -rf dist/vue3-cesiumjs
+          fi
 
       # SPA deep links on GitHub Pages
       - name: Add 404.html for client routes
